@@ -1,0 +1,19 @@
+2022年 11月 21日 星期一 20:37:22 CST
+THREAD NUMBER:         32
+LOAD_SIZE:             120000000
+PUT_SIZE:              10000000
+GET_SIZE:              10000000
+DB  name:              letree
+Workload:              
+read 500000000 values from /home/zzy/dataset/generate_random_ycsb.dat in 2493 ms (200.562 M values/s)
+Map addrs:0x7fdb80000000
+Current addrs:0x7fdb80000000
+Start run ....
+root_expand, old_groups: 1 new_groups: 26
+root_expand, old_groups: 26 new_groups: 426
+root_expand, old_groups: 426 new_groups: 5237
+root_expand, old_groups: 5237 new_groups: 82616
+[Metic-Load]: Load 120000000: cost 40.012s, iops 2.9991e+06 .
+[Metic-Put]: Put 10000000: cost 3.97544s, iops 2.51544e+06 .
+[Metic-Get]: Get 10000000: cost 2.33512s, iops 4.28244e+06 .
+/mnt/pmem1/lbl/data used: 1117227712 bytes. (1065 Mib, 482kib. free 5 Mib, 43kib.)

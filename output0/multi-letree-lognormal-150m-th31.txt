@@ -1,0 +1,34 @@
+2022年 11月 21日 星期一 20:35:59 CST
+THREAD NUMBER:         31
+LOAD_SIZE:             120000000
+PUT_SIZE:              10000000
+GET_SIZE:              10000000
+DB  name:              letree
+Workload:              
+read 971449634 values from /home/zzy/dataset/lognormal.dat in 3484 ms (278.832 M values/s)
+Map addrs:0x7f2140000000
+Current addrs:0x7f2140000000
+Start run ....
+root_expand, old_groups: 1 new_groups: 17
+root_expand, old_groups: 17 new_groups: 34
+root_expand, old_groups: 34 new_groups: 68
+root_expand, old_groups: 68 new_groups: 120
+root_expand, old_groups: 120 new_groups: 216
+root_expand, old_groups: 216 new_groups: 396
+root_expand, old_groups: 396 new_groups: 673
+root_expand, old_groups: 673 new_groups: 1216
+root_expand, old_groups: 1216 new_groups: 2067
+root_expand, old_groups: 2067 new_groups: 3207
+root_expand, old_groups: 3207 new_groups: 5438
+root_expand, old_groups: 5438 new_groups: 8416
+root_expand, old_groups: 8416 new_groups: 12575
+root_expand, old_groups: 12575 new_groups: 19767
+root_expand, old_groups: 19767 new_groups: 31539
+root_expand, old_groups: 31539 new_groups: 48990
+root_expand, old_groups: 48990 new_groups: 70244
+root_expand, old_groups: 70244 new_groups: 104259
+root_expand, old_groups: 104259 new_groups: 149478
+[Metic-Load]: Load 120000000: cost 70.9443s, iops 1.69147e+06 .
+[Metic-Put]: Put 10000000: cost 3.94219s, iops 2.53666e+06 .
+[Metic-Get]: Get 10000000: cost 3.19788s, iops 3.12707e+06 .
+/mnt/pmem1/lbl/data used: 1908400128 bytes. (1819 Mib, 1016kib. free 9 Mib, 126kib.)

@@ -1,0 +1,26 @@
+2022年 11月 21日 星期一 20:39:12 CST
+THREAD NUMBER:         32
+LOAD_SIZE:             120000000
+PUT_SIZE:              10000000
+GET_SIZE:              10000000
+DB  name:              letree
+Workload:              
+read 498242821 values from /home/zzy/dataset/generate_random_osm_longlat.dat in 2452 ms (203.199 M values/s)
+Map addrs:0x7efb80000000
+Current addrs:0x7efb80000000
+Start run ....
+root_expand, old_groups: 1 new_groups: 33
+root_expand, old_groups: 33 new_groups: 283
+root_expand, old_groups: 283 new_groups: 1101
+root_expand, old_groups: 1101 new_groups: 2425
+root_expand, old_groups: 2425 new_groups: 4607
+root_expand, old_groups: 4607 new_groups: 9110
+root_expand, old_groups: 9110 new_groups: 17233
+root_expand, old_groups: 17233 new_groups: 28990
+root_expand, old_groups: 28990 new_groups: 47182
+root_expand, old_groups: 47182 new_groups: 81508
+root_expand, old_groups: 81508 new_groups: 143190
+[Metic-Load]: Load 120000000: cost 46.5218s, iops 2.57943e+06 .
+[Metic-Put]: Put 10000000: cost 3.15291s, iops 3.17167e+06 .
+[Metic-Get]: Get 10000000: cost 1.75466s, iops 5.69911e+06 .
+/mnt/pmem1/lbl/data used: 1415182080 bytes. (1349 Mib, 637kib. free 8 Mib, 757kib.)

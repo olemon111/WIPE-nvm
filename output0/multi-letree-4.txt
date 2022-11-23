@@ -1,0 +1,31 @@
+THREAD NUMBER:         4
+LOAD_SIZE:             400000000
+PUT_SIZE:              10000000
+GET_SIZE:              10000000
+DELETE_SIZE:           10000000
+SCAN_TEST_SIZE:        40000000
+SCAN:                  10
+SCAN:                  100
+SCAN:                  1000
+SCAN:                  10000
+SORT_SCAN:             10
+SORT_SCAN:             100
+SORT_SCAN:             1000
+SORT_SCAN:             10000
+
+Map addrs:0x7f48c0000000
+Current addrs:0x7f48c0000000
+Map addrs:0x7f3c80000000
+Current addrs:0x7f3c80000000
+root_expand, old_groups: 1 new_groups: 18
+root_expand, old_groups: 18 new_groups: 311
+root_expand, old_groups: 311 new_groups: 4973
+root_expand, old_groups: 4973 new_groups: 59089
+root_expand, old_groups: 59089 new_groups: 266608
+root_expand, old_groups: 266608 new_groups: 487879
+load: 230.96 1731.92
+get: 2.82 3550.79
+threads size = 4
+put:  5.69 1758.58
+/mnt/pmem1/lbl/data used: 4474860800 bytes. (4267 Mib, 573kib. free 29 Mib, 796kib.)
+/mnt/pmem1/lbl/common-alloctor used: 0 bytes. (0 Mib, 0kib. free 0 Mib, 0kib.)

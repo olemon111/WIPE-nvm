@@ -1,0 +1,23 @@
+THREAD NUMBER:         8
+LOAD_SIZE:             400000000
+PUT_SIZE:              10000000
+GET_SIZE:              10000000
+DELETE_SIZE:           10000000
+SCAN_TEST_SIZE:        40000000
+SCAN:                  10
+SCAN:                  100
+SCAN:                  1000
+SCAN:                  10000
+SORT_SCAN:             10
+SORT_SCAN:             100
+SORT_SCAN:             1000
+SORT_SCAN:             10000
+
+Map addrs:0x7f5a40000000
+Current addrs:0x7f5a40000000
+Map addrs:0x7f4e00000000
+Current addrs:0x7f4e00000000
+root_expand, old_groups: 1 new_groups: 28
+root_expand, old_groups: 28 new_groups: 445
+root_expand, old_groups: 445 new_groups: 4947
+root_expand, old_groups: 4947 new_groups: 49404
