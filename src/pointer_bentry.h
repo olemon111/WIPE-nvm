@@ -1547,6 +1547,8 @@ namespace combotree
 
         bool remove_key(uint64_t key, uint64_t *value, int idx);
 
+        bool remove_key_reverse(uint64_t key, uint64_t *value, int idx);
+
         status SetValue(int pos, uint64_t value)
         {
             memcpy(pvalue(pos), &value, value_size);
@@ -1587,6 +1589,8 @@ namespace combotree
         }
 
         int Find(uint64_t target, bool &find) const;
+
+        int FindReverse(uint64_t target, bool &find) const;
 
         ALWAYS_INLINE uint64_t value(int idx) const
         {
@@ -1796,6 +1800,29 @@ namespace combotree
 
     template <const size_t bucket_size, const size_t value_size, const size_t key_size,
               const size_t max_entry_count>
+    bool UnSortBuncket<bucket_size, value_size, key_size, max_entry_count>::
+        remove_key_reverse(uint64_t key, uint64_t *value, int idx)
+    {
+        bool find = false;
+        int pos = FindReverse(key, find); // read from behind for crash consistency
+        if (find)
+        {
+            if (pos == idx - 1)
+                return true;
+            else
+            {
+                if (value)
+                    *value = records[pos].ptr;
+                records[pos].key = records[idx - 1].key;
+                records[pos].ptr = records[idx - 1].ptr;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    template <const size_t bucket_size, const size_t value_size, const size_t key_size,
+              const size_t max_entry_count>
     int UnSortBuncket<bucket_size, value_size, key_size, max_entry_count>::
         getSortedIndex(int sorted_index[]) const
     {
@@ -1918,6 +1945,23 @@ namespace combotree
 
     template <const size_t bucket_size, const size_t value_size, const size_t key_size,
               const size_t max_entry_count>
+    int UnSortBuncket<bucket_size, value_size, key_size, max_entry_count>::
+        FindReverse(uint64_t target, bool &find) const
+    {
+        for (int i = entries - 1; i >= 0; i--)
+        {
+            if (key(i) == target)
+            {
+                find = true;
+                return i;
+            }
+        }
+        find = false;
+        return entries;
+    }
+
+    template <const size_t bucket_size, const size_t value_size, const size_t key_size,
+              const size_t max_entry_count>
     status UnSortBuncket<bucket_size, value_size, key_size, max_entry_count>::
         Put(CLevel::MemControl *mem, uint64_t key, uint64_t value)
     {
@@ -2026,7 +2070,7 @@ namespace combotree
     status UnSortBuncket<bucket_size, value_size, key_size, max_entry_count>::
         Delete(CLevel::MemControl *mem, uint64_t key, uint64_t *value)
     {
-        auto ret = remove_key(key, value, entries);
+        auto ret = remove_key_reverse(key, value, entries);
         if (!ret)
         {
             return status::NoExist;
