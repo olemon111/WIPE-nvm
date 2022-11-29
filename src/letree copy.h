@@ -16,9 +16,10 @@
 
 #include <pthread.h>
 
+#define MULTI_THREAD
+
 namespace combotree
 {
-
     static const size_t max_entry_count = 1024;
     static const size_t min_entry_count = 64;
     typedef combotree::PointerBEntry bentry_t;
@@ -29,8 +30,7 @@ namespace combotree
      * 2. EXPAND_ALL 宏定义控制采用每次扩展所有EntryGroup，还是采用重复指针一次扩展一个EntryGroup
      */
     class letree;
-    class __attribute__((aligned(64)))
-    group
+    class __attribute__((aligned(64))) group
     {
         // class  group {
     public:
@@ -85,7 +85,7 @@ namespace combotree
 
         int binary_search_lower_bound(int l, int r, const uint64_t &key) const;
 
-        status Put(CLevel::MemControl *mem, uint64_t key, uint64_t value, int group_id);
+        status Put(CLevel::MemControl *mem, uint64_t key, uint64_t value);
 
         bool Get(CLevel::MemControl *mem, uint64_t key, uint64_t &value) const;
 
@@ -122,9 +122,7 @@ namespace combotree
         // LearnModel::rmi_model<uint64_t> model;
         // uint8_t reserve[16];
         LearnModel::rmi_line_model<uint64_t> model;
-        // uint8_t reserve[24];
-        pthread_mutex_t **lock_space;
-        uint8_t reserve[16];
+        uint8_t reserve[24];
         // CLevel::MemControl *clevel_mem_;
     }; // 每个group 64B
 
@@ -135,16 +133,7 @@ namespace combotree
         entry_space = (bentry_t *)NVM::data_alloc->alloc_aligned(nr_entries_ * sizeof(bentry_t));
 
         new (&entry_space[0]) bentry_t(0, 8, mem);
-#ifdef MULTI_THREAD
-        int entry_count = entry_space[0].entry_count;
-        lock_space = new pthread_mutex_t *[nr_entries_];
-        lock_space[0] = new pthread_mutex_t[entry_count];
-        for (int i = 0; i < entry_count; i++)
-        {
-            // pthread_mutex_init(&lock_space[0][i], NULL);
-            lock_space[0][i] = PTHREAD_MUTEX_INITIALIZER;
-        }
-#endif
+
         NVM::Mem_persist(entry_space, nr_entries_ * sizeof(bentry_t));
         model.init<bentry_t *, bentry_t>(entry_space, 1, 1, get_entry_key);
 
@@ -164,23 +153,8 @@ namespace combotree
         NVM::Mem_persist(new_entry_space, nr_entries_ * sizeof(bentry_t));
         model.init<bentry_t *, bentry_t>(new_entry_space, new_entry_count,
                                          std::ceil(1.0 * new_entry_count / 100), get_entry_key);
-#ifdef MULTI_THREAD
-        pthread_mutex_t **new_lock_space = new pthread_mutex_t *[nr_entries_];
-        int entry_count = entry_space[0].entry_count;
-        for (size_t i = 0; i < data.size(); i++)
-        {
-            new_lock_space[i] = new pthread_mutex_t[entry_count];
-            for (int j = 0; j < entry_count; j++)
-            {
-                new_lock_space[i][j] = PTHREAD_MUTEX_INITIALIZER;
-            }
-        }
-#endif
         entry_space = new_entry_space;
         next_entry_count = nr_entries_;
-#ifdef MULTI_THREAD
-        lock_space = new_lock_space;
-#endif
     }
 
     void group::bulk_load(std::vector<std::pair<uint64_t, uint64_t>> &data, size_t start, size_t count, CLevel::MemControl *mem)
@@ -223,16 +197,6 @@ namespace combotree
     void group::reserve_space()
     {
         entry_space = (bentry_t *)NVM::data_alloc->alloc_aligned(next_entry_count * sizeof(bentry_t));
-        lock_space = new pthread_mutex_t *[next_entry_count];
-        int entry_count = entry_space[0].entry_count;
-        for (size_t i = 0; i < next_entry_count; i++)
-        {
-            lock_space[i] = new pthread_mutex_t[entry_count];
-            for (int j = 0; j < entry_count; j++)
-            {
-                lock_space[i][j] = PTHREAD_MUTEX_INITIALIZER;
-            }
-        }
     }
 
     void group::re_tarin()
@@ -346,72 +310,28 @@ namespace combotree
         return l;
     }
 
-    status group::Put(CLevel::MemControl *mem, uint64_t key, uint64_t value, int group_id)
+    status group::Put(CLevel::MemControl *mem, uint64_t key, uint64_t value)
     {
     retry0:
         int entry_id = find_entry(key);
         bool split = false;
-#ifdef MULTI_THREAD
-        if (unlikely(is_group_expand[group_id].load(std::memory_order_acquire)))
-        {
-            std::cout << "group: " << group_id << " retry for self expand" << std::endl;
-            return status::Retry;
-        }
-        pthread_mutex_t *lock = lock_space[entry_id];
-        auto ret = entry_space[entry_id].Put(group_id, lock, mem, key, value, &split);
-#endif
-#ifndef MULTI_THREAD
-        auto ret = entry_space[entry_id].Put(group_id, mem, key, value, &split);
-#endif
+
+        auto ret = entry_space[entry_id].Put(mem, key, value, &split);
 
         if (split)
         {
             next_entry_count++;
         }
-#ifdef MULTI_THREAD
-        if (ret == status::Retry)
-        {
-            if (next_entry_count > max_entry_count) // return to expand tree
-            {
-                LOG(Debug::INFO, "Need expand tree: group entry count %d.", next_entry_count);
-                return status::Full;
-            }
-            return ret; // just retry~
-        }
-#endif
+
         if (ret == status::Full)
-        {                                           // LearnGroup数组满了，需要扩展
-            if (next_entry_count > max_entry_count) // return to expand tree
+        { // LearnGroup数组满了，需要扩展
+            if (next_entry_count > max_entry_count)
             {
-                LOG(Debug::INFO, "Need expand tree: group entry count %d.", next_entry_count);
+                // LOG(Debug::INFO, "Need expand tree: group entry count %d.", next_entry_count);
                 return ret;
             }
-#ifdef MULTI_THREAD
-            // expand group
-            if (unlikely(is_tree_expand.load(std::memory_order_acquire)))
-            {
-                std::cout << "tree expand before group: " << group_id << " expand" << std::endl;
-                return status::Retry;
-            }
-            bool b1 = false, b2 = true;
-            if (!is_group_expand[group_id].compare_exchange_strong(b1, b2, std::memory_order_acquire)) // abort if already in expansion
-            {
-                std::cout << "group " << group_id << " already in expansion" << std::endl;
-                return status::Retry;
-            }
-#endif
-            // cout << "expand group:" << group_id << endl;
             expand(mem);
-#ifdef MULTI_THREAD
-            is_group_expand[group_id].store(false);
-            if (unlikely(is_tree_expand.load(std::memory_order_acquire)))
-            {
-                std::cout << "tree expand after group: " << group_id << " expand" << std::endl;
-                return status::Retry;
-            }
-#endif
             split = false;
-            // std::cout << "retry after group: " << group_id << " expand" << std::endl;
             goto retry0;
         }
         return ret;
@@ -488,7 +408,6 @@ namespace combotree
 
     void group::expand(CLevel::MemControl *mem)
     {
-        // cout << "expand group, nr_entries: " << nr_entries_ << ", next_entry_cnt: " << next_entry_count << ", minkey: " << min_key << endl;
         bentry_t::EntryIter it;
         // Meticer timer;
         // timer.Start();
@@ -506,18 +425,6 @@ namespace combotree
                 it.next();
             }
         }
-#ifdef MULTI_THREAD
-        int entry_count = entry_space[0].entry_count;
-        pthread_mutex_t **new_lock_space = new pthread_mutex_t *[next_entry_count];
-        for (size_t i = 0; i < next_entry_count; i++)
-        {
-            new_lock_space[i] = new pthread_mutex_t[entry_count];
-            for (int j = 0; j < entry_count; j++)
-            {
-                new_lock_space[i][j] = PTHREAD_MUTEX_INITIALIZER;
-            }
-        }
-#endif
         if (next_entry_count != new_entry_count)
         {
             std::cout << "next_entry_count = " << next_entry_count << " new_entry_count = "
@@ -530,16 +437,6 @@ namespace combotree
         model.init<bentry_t *, bentry_t>(new_entry_space, new_entry_count,
                                          std::ceil(1.0 * new_entry_count / 100), get_entry_key);
         entry_space = new_entry_space;
-#ifdef MULTI_THREAD
-        if (lock_space)
-        {
-            for (size_t i = 0; i < nr_entries_; i++)
-            {
-                delete[] lock_space[i];
-            }
-        }
-        lock_space = new_lock_space;
-#endif
         nr_entries_ = new_entry_count;
         next_entry_count = nr_entries_;
         mem->expand_times++;
@@ -745,11 +642,12 @@ namespace combotree
 
     public:
         letree() : nr_groups_(0), root_expand_times(0)
+#ifdef MULTI_THREAD
+                   ,
+                   is_tree_expand(false)
+#endif
         {
             clevel_mem_ = new CLevel::MemControl(CLEVEL_PMEM_FILE, CLEVEL_PMEM_FILE_SIZE);
-#ifdef MULTI_THREAD
-            is_tree_expand.store(false);
-#endif
         }
 
         //         letree(size_t groups) : nr_groups_(groups), root_expand_times(0)
@@ -773,13 +671,8 @@ namespace combotree
                 NVM::data_alloc->Free(group_space, nr_groups_ * sizeof(group));
 
 #ifdef MULTI_THREAD
-            // if (lock_space)
-            //     delete[] lock_space;
-            if (is_group_expand)
-            {
-                delete[] is_group_expand;
-                is_group_expand = nullptr;
-            }
+            if (lock_space)
+                delete[] lock_space;
 #endif
         }
 
@@ -788,11 +681,9 @@ namespace combotree
             nr_groups_ = 1;
             group_space = (group *)NVM::data_alloc->alloc_aligned(sizeof(group));
 #ifdef MULTI_THREAD
-            // // lock_space = new std::mutex[1];
-            // lock_space = new pthread_mutex_t[1];
-            // lock_space[0] = PTHREAD_MUTEX_INITIALIZER;
-            is_group_expand = new std::atomic_bool[1];
-            is_group_expand[0].store(false);
+            // lock_space = new std::mutex[1];
+            lock_space = new pthread_mutex_t[1];
+            lock_space[0] = PTHREAD_MUTEX_INITIALIZER;
 #endif
             group_space[0].Init(clevel_mem_);
         }
@@ -861,6 +752,14 @@ namespace combotree
         CLevel::MemControl *clevel_mem_;
         int entries_per_group = min_entry_count;
         uint64_t root_expand_times;
+
+#ifdef MULTI_THREAD
+        // std::mutex *lock_space;
+        pthread_mutex_t *lock_space;
+        std::mutex expand_wait_lock;
+        std::condition_variable expand_wait_cv;
+        std::atomic_bool is_tree_expand;
+#endif
     };
 
     void letree::bulk_load(std::vector<std::pair<uint64_t, uint64_t>> &data)
@@ -871,13 +770,8 @@ namespace combotree
         if (nr_groups_ != 0)
         {
 #ifdef MULTI_THREAD
-            // if (lock_space)
-            //     delete[] lock_space;
-            if (is_group_expand)
-            {
-                delete[] is_group_expand;
-                is_group_expand = nullptr;
-            }
+            if (lock_space)
+                delete[] lock_space;
 #endif
         }
 
@@ -886,15 +780,10 @@ namespace combotree
         group_space = (group *)NVM::data_alloc->alloc_aligned(nr_groups_ * sizeof(group));
         pmem_memset_persist(group_space, 0, nr_groups_ * sizeof(group));
 #ifdef MULTI_THREAD
-        // // lock_space = new std::mutex[nr_groups_];
-        // lock_space = new pthread_mutex_t[nr_groups_];
-        // for (int i = 0; i < nr_groups_; i++)
-        //     lock_space[i] = PTHREAD_MUTEX_INITIALIZER;
-        is_group_expand = new std::atomic_bool[nr_groups_];
+        // lock_space = new std::mutex[nr_groups_];
+        lock_space = new pthread_mutex_t[nr_groups_];
         for (int i = 0; i < nr_groups_; i++)
-        {
-            is_group_expand[i].store(false);
-        }
+            lock_space[i] = PTHREAD_MUTEX_INITIALIZER;
 #endif
         for (int i = 0; i < size; i++)
         {
@@ -921,13 +810,8 @@ namespace combotree
         if (nr_groups_ != 0)
         {
 #ifdef MULTI_THREAD
-            // if (lock_space)
-            //     delete[] lock_space;
-            if (is_group_expand)
-            {
-                delete[] is_group_expand;
-                is_group_expand = nullptr;
-            }
+            if (lock_space)
+                delete[] lock_space;
 #endif
         }
 
@@ -936,15 +820,10 @@ namespace combotree
         group_space = (group *)NVM::data_alloc->alloc_aligned(nr_groups_ * sizeof(group));
         pmem_memset_persist(group_space, 0, nr_groups_ * sizeof(group));
 #ifdef MULTI_THREAD
-        // // lock_space = new std::mutex[nr_groups_];
-        // lock_space = new pthread_mutex_t[nr_groups_];
-        // for (int i = 0; i < nr_groups_; i++)
-        //     lock_space[i] = PTHREAD_MUTEX_INITIALIZER;
-        is_group_expand = new std::atomic_bool[nr_groups_];
+        // lock_space = new std::mutex[nr_groups_];
+        lock_space = new pthread_mutex_t[nr_groups_];
         for (int i = 0; i < nr_groups_; i++)
-        {
-            is_group_expand[i].store(false);
-        }
+            lock_space[i] = PTHREAD_MUTEX_INITIALIZER;
 #endif
         for (int i = 0; i < size; i++)
         {
@@ -973,25 +852,21 @@ namespace combotree
         {
             int group_id = find_group(key);
 #ifdef MULTI_THREAD
-            //             pthread_mutex_lock(&lock_space[group_id]);
+            // std::unique_lock<std::mutex> lock(lock_space[group_id]);
+            pthread_mutex_lock(&lock_space[group_id]);
             if (unlikely(is_tree_expand.load(std::memory_order_acquire)))
             {
-                //                 pthread_mutex_unlock(&lock_space[group_id]);
+                pthread_mutex_unlock(&lock_space[group_id]);
                 goto retry0;
-                //             } //存在本线程阻塞在lock，然后另一个线程释放lock并进行ExpandTree的situation
-            }
+            } //存在本线程阻塞在lock，然后另一个线程释放lock并进行ExpandTree的situation
+
 #endif
-            ret = group_space[group_id].Put(clevel_mem_, key, value, group_id);
-            // #ifdef MULTI_THREAD
-            //             pthread_mutex_unlock(&lock_space[group_id]);
-            // #endif
-        }
+            ret = group_space[group_id].Put(clevel_mem_, key, value);
 #ifdef MULTI_THREAD
-        if (ret == status::Retry)
-        {
-            goto retry0;
-        }
+            pthread_mutex_unlock(&lock_space[group_id]);
 #endif
+        }
+
         if (ret == status::Full)
         { // LearnGroup 太大了
             ExpandTree();
@@ -1002,24 +877,23 @@ namespace combotree
 
     bool letree::Update(uint64_t key, uint64_t value)
     {
-        //         // #ifdef MULTI_THREAD
-        //         //         trans_begin();
-        //         // #endif
-        //         int group_id = find_group(key);
-        // #ifdef MULTI_THREAD
-        //         // std::unique_lock<std::mutex> lock(lock_space[group_id]);
-        //         pthread_mutex_lock(&lock_space[group_id]);
-        // #endif
-        //         auto ret = group_space[group_id].Update(clevel_mem_, key, value);
-        //         return ret;
-        return true;
+#ifdef MULTI_THREAD
+        trans_begin();
+#endif
+        int group_id = find_group(key);
+#ifdef MULTI_THREAD
+        // std::unique_lock<std::mutex> lock(lock_space[group_id]);
+        pthread_mutex_lock(&lock_space[group_id]);
+#endif
+        auto ret = group_space[group_id].Update(clevel_mem_, key, value);
+        return ret;
     }
 
     bool letree::Get(uint64_t key, uint64_t &value)
     {
-        // #ifdef MULTI_THREAD
-        //         trans_begin();
-        // #endif
+#ifdef MULTI_THREAD
+        trans_begin();
+#endif
         // Common::g_metic.tracepoint("None");
         // int group_id = find_group(key);
         // Common::g_metic.tracepoint("FindGoup");
@@ -1040,9 +914,9 @@ namespace combotree
 
     bool letree::Scan(uint64_t start_key, int len, std::vector<std::pair<uint64_t, uint64_t>> &results)
     {
-        // #ifdef MULTI_THREAD
-        //         trans_begin();
-        // #endif
+#ifdef MULTI_THREAD
+        trans_begin();
+#endif
         int length = len;
         if (scan_fast(start_key, length, results))
         {
@@ -1056,20 +930,19 @@ namespace combotree
 
     bool letree::Delete(uint64_t key)
     {
-        //         // #ifdef MULTI_THREAD
-        //         //         trans_begin();
-        //         // #endif
-        //         int group_id = find_group(key);
-        // #ifdef MULTI_THREAD
-        //         // std::unique_lock<std::mutex> lock(lock_space[group_id]);
-        //         pthread_mutex_lock(&lock_space[group_id]);
-        // #endif
-        //         auto ret = group_space[group_id].Delete(clevel_mem_, key);
-        // #ifdef MULTI_THREAD
-        //         pthread_mutex_unlock(&lock_space[group_id]);
-        // #endif
-        //         return ret;
-        return true;
+#ifdef MULTI_THREAD
+        trans_begin();
+#endif
+        int group_id = find_group(key);
+#ifdef MULTI_THREAD
+        // std::unique_lock<std::mutex> lock(lock_space[group_id]);
+        pthread_mutex_lock(&lock_space[group_id]);
+#endif
+        auto ret = group_space[group_id].Delete(clevel_mem_, key);
+#ifdef MULTI_THREAD
+        pthread_mutex_unlock(&lock_space[group_id]);
+#endif
+        return ret;
     }
 
     // zzy: 内部节点寻找group需要线性查找, 这里如何优化呢？
@@ -1221,8 +1094,8 @@ namespace combotree
             return;
 #endif
 
-        Meticer timer;
-        timer.Start();
+        // Meticer timer;
+        // timer.Start();
         {
             /*采用一层线性模型*/
             LearnModel::rmi_line_model<uint64_t>::builder_t bulder(&model);
@@ -1267,15 +1140,10 @@ namespace combotree
         group *new_group_space = (group *)NVM::data_alloc->alloc_aligned(new_nr_groups * sizeof(group));
         pmem_memset_persist(new_group_space, 0, new_nr_groups * sizeof(group));
 #ifdef MULTI_THREAD
-        // // std::mutex *new_lock_space = new std::mutex[new_nr_groups];
-        // pthread_mutex_t *new_lock_space = new pthread_mutex_t[new_nr_groups];
-        // for (int i = 0; i < new_nr_groups; i++)
-        //     new_lock_space[i] = PTHREAD_MUTEX_INITIALIZER;
-        std::atomic_bool *new_is_group_expand = new std::atomic_bool[new_nr_groups];
+        // std::mutex *new_lock_space = new std::mutex[new_nr_groups];
+        pthread_mutex_t *new_lock_space = new pthread_mutex_t[new_nr_groups];
         for (int i = 0; i < new_nr_groups; i++)
-        {
-            new_is_group_expand[i].store(false);
-        }
+            new_lock_space[i] = PTHREAD_MUTEX_INITIALIZER;
 #endif
         int group_id = 0;
 
@@ -1338,13 +1206,8 @@ namespace combotree
         if (nr_groups_ != 0)
         {
 #ifdef MULTI_THREAD
-            // if (lock_space)
-            //     delete[] lock_space;
-            if (is_group_expand)
-            {
-                delete[] is_group_expand;
-                is_group_expand = nullptr;
-            }
+            if (lock_space)
+                delete[] lock_space;
 #endif
         }
         std::cout << "root_expand, old_groups: " << nr_groups_ << " new_groups: " << new_nr_groups << std::endl;
@@ -1352,14 +1215,13 @@ namespace combotree
         group_space = new_group_space;
         root_expand_times++;
 #ifdef MULTI_THREAD
-        // lock_space = new_lock_space;
-        is_group_expand = new_is_group_expand;
+        lock_space = new_lock_space;
         is_tree_expand.store(false);
         expand_wait_cv.notify_all();
 #endif
-        uint64_t expand_time = timer.End();
-        LOG(Debug::INFO, "Finish expanding group, new group count %ld,  expansion time is %lfs",
-            nr_groups_, (double)expand_time / 1000000.0);
+        // uint64_t expand_time = timer.End();
+        // LOG(Debug::INFO, "Finish expanding group, new group count %ld,  expansion time is %lfs",
+        // nr_groups_, (double)expand_time/1000000.0);
         // Show();
     }
 

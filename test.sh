@@ -8,7 +8,7 @@ cd ..
 # # benchmark
 # chmod +x ./tests/run_benchmark.sh
 # sudo ./tests/run_benchmark.sh
-
+# sudo mkdir -p /mnt/pmem1/lbl
 chmod +x ./tests/run_multi_bench.sh
 sudo ./tests/run_multi_bench.sh
 

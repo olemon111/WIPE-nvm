@@ -16,6 +16,19 @@
 #include "clevel.h"
 #include "pmem.h"
 
+#define MULTI_THREAD
+// #define MULTI_THREAD
+
+#ifdef MULTI_THREAD
+// tree
+std::mutex expand_wait_lock;
+std::condition_variable expand_wait_cv;
+std::atomic_bool is_tree_expand;
+// group
+std::atomic_bool *is_group_expand;
+
+#endif
+
 using namespace std;
 
 namespace combotree
@@ -2205,7 +2218,9 @@ namespace combotree
         // zzy: 线性查找,这里的IsValid()的意图是啥呢？优化成了二分查找
         int Find_pos(uint64_t key) const;
 
-        status Put(CLevel::MemControl *mem, uint64_t key, uint64_t value, bool *split = nullptr);
+        status Put(int group_id, CLevel::MemControl *mem, uint64_t key, uint64_t value, bool *split = nullptr);
+
+        status Put(int group_id, pthread_mutex_t *buncket_lock_space, CLevel::MemControl *mem, uint64_t key, uint64_t value, bool *split = nullptr);
 
         bool Update(CLevel::MemControl *mem, uint64_t key, uint64_t value);
 
@@ -2506,7 +2521,7 @@ namespace combotree
         return status::OK;
     }
 
-    status PointerBEntry::Put(CLevel::MemControl *mem, uint64_t key, uint64_t value, bool *split)
+    status PointerBEntry::Put(int group_id, pthread_mutex_t *buncket_lock_space, CLevel::MemControl *mem, uint64_t key, uint64_t value, bool *split)
     {
     retry:
         // Common::timers["ALevel_times"].start();
@@ -2518,9 +2533,43 @@ namespace combotree
             flag = true;
             entrys[pos].pointer.Setup(mem, key, entrys[pos].buf.prefix_bytes);
         }
-        // Common::timers["ALevel_times"].end();
-        // std::cout << "Put key: " << key << ", value " << value << std::endl;
+// Common::timers["ALevel_times"].end();
+// std::cout << "Put key: " << key << ", value " << value << std::endl;
+#ifdef MULTI_THREAD
+        // cout << group_id << " lock at pos:" << pos << ", key:" << key << endl;
+        pthread_mutex_lock(&buncket_lock_space[pos]);
+        if (is_group_expand)
+        {
+            if (unlikely(is_group_expand[group_id].load(std::memory_order_acquire)))
+            {
+                pthread_mutex_unlock(&buncket_lock_space[pos]);
+                return status::Retry;
+            }
+        }
+        if (unlikely(is_tree_expand.load(std::memory_order_acquire)))
+        {
+            pthread_mutex_unlock(&buncket_lock_space[pos]);
+            return status::Retry;
+        }
+#endif
         auto ret = (entrys[pos].pointer.pointer(mem->BaseAddr()))->Put(mem, key, value);
+#ifdef MULTI_THREAD
+        if (is_group_expand)
+        {
+            if (unlikely(is_group_expand[group_id].load(std::memory_order_acquire)))
+            {
+                std::cout << "unlock with group: " << group_id << " expand" << std::endl;
+                pthread_mutex_unlock(&buncket_lock_space[pos]);
+                return status::Retry;
+            }
+        }
+        if (unlikely(is_tree_expand.load(std::memory_order_acquire))) // FIXME:
+        {
+            std::cout << "unlock with tree expand" << std::endl;
+            pthread_mutex_unlock(&buncket_lock_space[pos]);
+            return status::Retry;
+        }
+#endif
         // if(ret == status::Full){
         //     std::cout << entrys[0].buf.entries << std::endl;
         // }
@@ -2548,15 +2597,131 @@ namespace combotree
             // #ifdef TEST_PMEM_SIZE
             //                 NVM::pmem_size += CACHE_LINE_SIZE;
             // #endif
+#ifdef MULTI_THREAD
+            // std::cout << "unlock with buncket expand" << std::endl;
+            pthread_mutex_unlock(&buncket_lock_space[pos]);
+#endif
             goto retry;
         }
-        // if(ret != status::OK) {
-        //     std::cout << "Put failed " << ret << std::endl;
-        // }
+        if (ret != status::OK)
+        {
+            // std::cout << "Put failed " << key << std::endl;
+        }
         if (ret == status::OK && entry_key > key)
         {
             entry_key = key;
         }
+#ifdef MULTI_THREAD
+        if (ret != status::OK && ret != status::Full)
+        {
+            std::cout << "unlock with status:" << ret << std::endl;
+        }
+        pthread_mutex_unlock(&buncket_lock_space[pos]);
+#endif
+        // if (!entrys[pos].IsValid() && flag)
+        // {
+        //     cout << "should be valid" << endl;
+        // }
+        return ret;
+    }
+
+    status PointerBEntry::Put(int group_id, CLevel::MemControl *mem, uint64_t key, uint64_t value, bool *split)
+    {
+    retry:
+        // Common::timers["ALevel_times"].start();
+        int pos = Find_pos(key);
+        bool flag = false;
+        if (unlikely(!entrys[pos].IsValid()))
+        {
+            // cout << "begin" << endl;
+            flag = true;
+            entrys[pos].pointer.Setup(mem, key, entrys[pos].buf.prefix_bytes);
+        }
+        // Common::timers["ALevel_times"].end();
+        // std::cout << "Put key: " << key << ", value " << value << std::endl;
+        // #ifdef MULTI_THREAD
+        //         // cout << group_id << " lock at pos:" << pos << ", key:" << key << endl;
+        //         pthread_mutex_lock(&buncket_lock_space[pos]);
+        //         if (is_group_expand)
+        //         {
+        //             if (unlikely(is_group_expand[group_id].load(std::memory_order_acquire)))
+        //             {
+        //                 pthread_mutex_unlock(&buncket_lock_space[pos]);
+        //                 return status::Retry;
+        //             }
+        //         }
+        //         if (unlikely(is_tree_expand.load(std::memory_order_acquire)))
+        //         {
+        //             pthread_mutex_unlock(&buncket_lock_space[pos]);
+        //             return status::Retry;
+        //         }
+        // #endif
+        auto ret = (entrys[pos].pointer.pointer(mem->BaseAddr()))->Put(mem, key, value);
+        // #ifdef MULTI_THREAD
+        //         if (is_group_expand)
+        //         {
+        //             if (unlikely(is_group_expand[group_id].load(std::memory_order_acquire)))
+        //             {
+        //                 std::cout << "unlock with group: " << group_id << " expand" << std::endl;
+        //                 pthread_mutex_unlock(&buncket_lock_space[pos]);
+        //                 return status::Retry;
+        //             }
+        //         }
+        //         if (unlikely(is_tree_expand.load(std::memory_order_acquire))) // FIXME:
+        //         {
+        //             std::cout << "unlock with tree expand" << std::endl;
+        //             pthread_mutex_unlock(&buncket_lock_space[pos]);
+        //             return status::Retry;
+        //         }
+        // #endif
+        // if(ret == status::Full){
+        //     std::cout << entrys[0].buf.entries << std::endl;
+        // }
+        if (ret == status::Full && entrys[0].buf.entries < entry_count)
+        { // 节点满的时候进行扩展
+            buncket_t *next = nullptr;
+            uint64_t split_key;
+            int prefix_len = 0;
+            (entrys[pos].pointer.pointer(mem->BaseAddr()))->Expand_(mem, next, split_key, prefix_len);
+            for (int i = entrys[0].buf.entries - 1; i > pos; i--)
+            {
+                entrys[i + 1] = entrys[i];
+            }
+            entrys[pos + 1].entry_key = split_key;
+            entrys[pos + 1].pointer.Setup(mem, next, key, prefix_len);
+            entrys[pos + 1].buf.prefix_bytes = prefix_len;
+            entrys[pos + 1].buf.suffix_bytes = 8 - prefix_len;
+            entrys[0].buf.entries++;
+            // std::cout << entrys[0].buf.entries << std::endl;
+            // this->Show(mem);
+            if (split)
+                *split = true;
+            NVM::Mem_persist(&entrys[0], sizeof(PointerBEntry));
+            // clflush(&entrys[0]);
+            // #ifdef TEST_PMEM_SIZE
+            //                 NVM::pmem_size += CACHE_LINE_SIZE;
+            // #endif
+            // #ifdef MULTI_THREAD
+            //             // std::cout << "unlock with buncket expand" << std::endl;
+            //             pthread_mutex_unlock(&buncket_lock_space[pos]);
+            // #endif
+            goto retry;
+        }
+        if (ret != status::OK)
+        {
+            // std::cout << "Put failed " << key << std::endl;
+        }
+        if (ret == status::OK && entry_key > key)
+        {
+            entry_key = key;
+        }
+        // #ifdef MULTI_THREAD
+        //         if (ret != status::OK && ret != status::Full)
+        //         {
+        //             std::cout << "unlock with status:" << ret << std::endl;
+        //         }
+        //         pthread_mutex_unlock(&buncket_lock_space[pos]);
+        // #endif
 
         // if (!entrys[pos].IsValid() && flag)
         // {
@@ -2565,52 +2730,53 @@ namespace combotree
         return ret;
     }
 
-    // 合并左右节点，并插入KV对
-    static status MergePointerBEntry(PointerBEntry *left, PointerBEntry *right,
-                                     CLevel::MemControl *mem, uint64_t key, uint64_t value)
-    {
-        if (left->buf.entries == PointerBEntry::entry_count)
-        {
-            // simple move one to left
-            int right_entries = right->buf.entries;
-            std::copy(&right->entrys[0], &right->entrys[right_entries], &right->entrys[1]);
-            // memmove(&right->entrys[1], &right->entrys[0], sizeof(eentry) * (right->buf.entries));
-            right->entrys[0] = left->entrys[left->buf.entries - 1];
-            right->buf.entries = right->entrys[1].buf.entries + 1;
-            clflush(right);
-            fence();
-            // NVM::Mem_persist(right, sizeof(PointerBEntry));
-            left->entrys[left->buf.entries - 1].SetInvalid();
-            left->buf.entries -= 1;
-            clflush(left);
-            fence();
-            // NVM::Mem_persist(left, sizeof(PointerBEntry));
-        }
-        else
-        {
-            left->entrys[left->buf.entries] = right->entrys[0];
-            left->buf.entries += 1;
-            clflush(left);
-            fence();
-            // NVM::Mem_persist(left, sizeof(PointerBEntry));
+    // // 合并左右节点，并插入KV对
+    // static status MergePointerBEntry(PointerBEntry *left, PointerBEntry *right,
+    //                                  CLevel::MemControl *mem, uint64_t key, uint64_t value)
+    // {
+    //     if (left->buf.entries == PointerBEntry::entry_count)
+    //     {
+    //         // simple move one to left
+    //         int right_entries = right->buf.entries;
+    //         std::copy(&right->entrys[0], &right->entrys[right_entries], &right->entrys[1]);
+    //         // memmove(&right->entrys[1], &right->entrys[0], sizeof(eentry) * (right->buf.entries));
+    //         right->entrys[0] = left->entrys[left->buf.entries - 1];
+    //         right->buf.entries = right->entrys[1].buf.entries + 1;
+    //         clflush(right);
+    //         fence();
+    //         // NVM::Mem_persist(right, sizeof(PointerBEntry));
+    //         left->entrys[left->buf.entries - 1].SetInvalid();
+    //         left->buf.entries -= 1;
+    //         clflush(left);
+    //         fence();
+    //         // NVM::Mem_persist(left, sizeof(PointerBEntry));
+    //     }
+    //     else
+    //     {
+    //         left->entrys[left->buf.entries] = right->entrys[0];
+    //         left->buf.entries += 1;
+    //         clflush(left);
+    //         fence();
+    //         // NVM::Mem_persist(left, sizeof(PointerBEntry));
 
-            int right_entries = right->buf.entries;
-            std::copy(&right->entrys[1], &right->entrys[right_entries], &right->entrys[0]);
-            // memmove(&right->entrys[0], &right->entrys[1], sizeof(eentry) * (right_entries - 1));
-            right->entrys[right_entries - 1].SetInvalid();
-            right->buf.entries = right_entries - 1;
-            clflush(right);
-            fence();
-            // NVM::Mem_persist(right, sizeof(PointerBEntry));
-        }
-        if (key < right->entry_key)
-        {
-            return left->Put(mem, key, value);
-        }
-        else
-        {
-            return right->Put(mem, key, value);
-        }
-    }
+    //         int right_entries = right->buf.entries;
+    //         std::copy(&right->entrys[1], &right->entrys[right_entries], &right->entrys[0]);
+    //         // memmove(&right->entrys[0], &right->entrys[1], sizeof(eentry) * (right_entries - 1));
+    //         right->entrys[right_entries - 1].SetInvalid();
+    //         right->buf.entries = right_entries - 1;
+    //         clflush(right);
+    //         fence();
+    //         // NVM::Mem_persist(right, sizeof(PointerBEntry));
+    //     }
+    //     if (key < right->entry_key)
+    //     {
+    //         return left->Put(mem, key, value);
+    //     }
+    //     else
+    //     {
+    //         return right->Put(mem, key, value);
+    //     }
+    // }
+
     // namespace combotree
 }

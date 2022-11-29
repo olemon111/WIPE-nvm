@@ -757,12 +757,14 @@ namespace dbInter
     {
       // alex_->insert(key, value);
       let_->Put(key, value);
+      // std::cout << "let put:" << key << ", " << value << std::endl;
       return 1;
     }
 
     int Get(uint64_t key, uint64_t &value)
     {
       let_->Get(key, value);
+      // std::cout << "let get:" << key << ", " << value << std::endl;
       return 1;
     }
     int Delete(uint64_t key)
