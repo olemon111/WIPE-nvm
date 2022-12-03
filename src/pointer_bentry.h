@@ -2529,14 +2529,12 @@ namespace combotree
         bool flag = false;
         if (unlikely(!entrys[pos].IsValid()))
         {
-            // cout << "begin" << endl;
             flag = true;
             entrys[pos].pointer.Setup(mem, key, entrys[pos].buf.prefix_bytes);
         }
 // Common::timers["ALevel_times"].end();
 // std::cout << "Put key: " << key << ", value " << value << std::endl;
 #ifdef MULTI_THREAD
-        // cout << group_id << " lock at pos:" << pos << ", key:" << key << endl;
         pthread_mutex_lock(&buncket_lock_space[pos]);
         if (is_group_expand)
         {
@@ -2546,6 +2544,10 @@ namespace combotree
                 return status::Retry;
             }
         }
+        else // pointer removed when expanding tree
+        {
+            return status::Retry;
+        }
         if (unlikely(is_tree_expand.load(std::memory_order_acquire)))
         {
             pthread_mutex_unlock(&buncket_lock_space[pos]);
@@ -2553,28 +2555,17 @@ namespace combotree
         }
 #endif
         auto ret = (entrys[pos].pointer.pointer(mem->BaseAddr()))->Put(mem, key, value);
-#ifdef MULTI_THREAD
-        if (is_group_expand)
-        {
-            if (unlikely(is_group_expand[group_id].load(std::memory_order_acquire)))
-            {
-                std::cout << "unlock with group: " << group_id << " expand" << std::endl;
-                pthread_mutex_unlock(&buncket_lock_space[pos]);
-                return status::Retry;
-            }
-        }
-        if (unlikely(is_tree_expand.load(std::memory_order_acquire))) // FIXME:
-        {
-            std::cout << "unlock with tree expand" << std::endl;
-            pthread_mutex_unlock(&buncket_lock_space[pos]);
-            return status::Retry;
-        }
-#endif
-        // if(ret == status::Full){
-        //     std::cout << entrys[0].buf.entries << std::endl;
-        // }
         if (ret == status::Full && entrys[0].buf.entries < entry_count)
         { // 节点满的时候进行扩展
+#ifdef MULTI_THREAD
+          // lock group before split bucket
+            bool b1 = false, b2 = true;
+            if (!is_group_expand[group_id].compare_exchange_strong(b1, b2, std::memory_order_acquire))
+            {
+                pthread_mutex_unlock(&buncket_lock_space[pos]);
+                return status::Retry; // split fail
+            }
+#endif
             buncket_t *next = nullptr;
             uint64_t split_key;
             int prefix_len = 0;
@@ -2598,8 +2589,8 @@ namespace combotree
             //                 NVM::pmem_size += CACHE_LINE_SIZE;
             // #endif
 #ifdef MULTI_THREAD
-            // std::cout << "unlock with buncket expand" << std::endl;
             pthread_mutex_unlock(&buncket_lock_space[pos]);
+            return status::Retry;
 #endif
             goto retry;
         }
@@ -2612,10 +2603,6 @@ namespace combotree
             entry_key = key;
         }
 #ifdef MULTI_THREAD
-        if (ret != status::OK && ret != status::Full)
-        {
-            std::cout << "unlock with status:" << ret << std::endl;
-        }
         pthread_mutex_unlock(&buncket_lock_space[pos]);
 #endif
         // if (!entrys[pos].IsValid() && flag)
@@ -2639,41 +2626,7 @@ namespace combotree
         }
         // Common::timers["ALevel_times"].end();
         // std::cout << "Put key: " << key << ", value " << value << std::endl;
-        // #ifdef MULTI_THREAD
-        //         // cout << group_id << " lock at pos:" << pos << ", key:" << key << endl;
-        //         pthread_mutex_lock(&buncket_lock_space[pos]);
-        //         if (is_group_expand)
-        //         {
-        //             if (unlikely(is_group_expand[group_id].load(std::memory_order_acquire)))
-        //             {
-        //                 pthread_mutex_unlock(&buncket_lock_space[pos]);
-        //                 return status::Retry;
-        //             }
-        //         }
-        //         if (unlikely(is_tree_expand.load(std::memory_order_acquire)))
-        //         {
-        //             pthread_mutex_unlock(&buncket_lock_space[pos]);
-        //             return status::Retry;
-        //         }
-        // #endif
         auto ret = (entrys[pos].pointer.pointer(mem->BaseAddr()))->Put(mem, key, value);
-        // #ifdef MULTI_THREAD
-        //         if (is_group_expand)
-        //         {
-        //             if (unlikely(is_group_expand[group_id].load(std::memory_order_acquire)))
-        //             {
-        //                 std::cout << "unlock with group: " << group_id << " expand" << std::endl;
-        //                 pthread_mutex_unlock(&buncket_lock_space[pos]);
-        //                 return status::Retry;
-        //             }
-        //         }
-        //         if (unlikely(is_tree_expand.load(std::memory_order_acquire))) // FIXME:
-        //         {
-        //             std::cout << "unlock with tree expand" << std::endl;
-        //             pthread_mutex_unlock(&buncket_lock_space[pos]);
-        //             return status::Retry;
-        //         }
-        // #endif
         // if(ret == status::Full){
         //     std::cout << entrys[0].buf.entries << std::endl;
         // }
@@ -2701,10 +2654,6 @@ namespace combotree
             // #ifdef TEST_PMEM_SIZE
             //                 NVM::pmem_size += CACHE_LINE_SIZE;
             // #endif
-            // #ifdef MULTI_THREAD
-            //             // std::cout << "unlock with buncket expand" << std::endl;
-            //             pthread_mutex_unlock(&buncket_lock_space[pos]);
-            // #endif
             goto retry;
         }
         if (ret != status::OK)
@@ -2715,13 +2664,6 @@ namespace combotree
         {
             entry_key = key;
         }
-        // #ifdef MULTI_THREAD
-        //         if (ret != status::OK && ret != status::Full)
-        //         {
-        //             std::cout << "unlock with status:" << ret << std::endl;
-        //         }
-        //         pthread_mutex_unlock(&buncket_lock_space[pos]);
-        // #endif
 
         // if (!entrys[pos].IsValid() && flag)
         // {

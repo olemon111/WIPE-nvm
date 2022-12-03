@@ -13,7 +13,7 @@ function Run() {
     rm -rf /mnt/pmem1/lbl/*
     Loadname="ycsb-400m"
     date | tee multi-${dbname}-${Loadname}-th${thread}.txt
-    gdb --args \
+    # gdb --args \
     numactl --cpubind=1 --membind=1 ${BUILDDIR}/multi_bench --dbname ${dbname} \
     --loadstype 3 --load-size ${loadnum} --put-size ${opnum} --get-size ${opnum} \
         -t $thread | tee -a multi-${dbname}-${Loadname}-th${thread}.txt
@@ -67,20 +67,17 @@ function run_all() {
 }
 
 dbname="letree"
-# loadnum=168
+# loadnum=151
 # loadnum=11350
-# loadnum=12000
 # loadnum=1000000
 loadnum=400000000
-opnum=$loadnum
-# opnum=10000000
-scansize=4000000
-# thread=4
+# loadnum=13000000
+opnum=10000000
+# opnum=$loadnum
+scansize=0
+thread=30
 
-# for thread in 2
-# for thread in 30
-for thread in 1
 # for thread in 30 31 32
-do
+# do
     Run $dbname $loadnum $opnum $scansize $thread
-done
+# done

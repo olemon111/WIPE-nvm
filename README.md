@@ -1,37 +1,12 @@
-# ComboTree
+# WIPE-NVM
 
-## Request
+> 本项目主要在原有代码基础上，修改并发逻辑
 
-**CPU flag**:
+## 并发
 
-- *clflush*: clflush OR clflushopt OR clwb
-- *streaming store*: sse2 OR avx2 OR avx512vl
-- *bit instruction*: bmi1 AND bmi2
+1. 将原有针对 group 的互斥锁改为更细粒度的 bucket 互斥锁，提高写性能
+2. 针对 group 和 tree 的扩展，使用乐观锁
 
-**endian**: little endian
+## 其它
 
-**C++ standard**: C++11
-
-**Dependence**
-***PGM-Index***
-[https:] https://github.com/gvinciguerra/PGM-index.git
-    
-***Xindex***
-[https:] https://ipads.se.sjtu.edu.cn:1312/opensource/xindex.git
-<!-- [MKL]:
-添加intel源：
-yum -y install yum-utils
-yum-config-manager --add-repo https://yum.repos.intel.com/mkl/setup/intel-mkl.repo
-下载并安装MKL：
-yum install -y intel-mkl -->
-<!-- 内存检测 -->
-<!-- sudo valgrind --leak-check=full --show-reachable=yes --trace-children=yes -s -->
-**YCSB**
-./ycsb -db letree -threads 1 -P ../include/ycsb/workloads/
-./ycsb -db combotree -threads 1 -P ../include/ycsb/insert_ratio/
-
-**OSM**
-osmconvert: wget -O - http://m.m.i24.cc/osmconvert.c | cc -x c - -lz -O3 -o osmconvert
-pbftoosm: osmconvert region.pbf -o=region.osm
-statistics: osmconvert germany.osm.pbf --out-statistics
-osmtocsv: osmconvert shops.osm --all-to-nodes --csv="@id @lon @lat amenity shop name" --csv-headline
+1. 修改删除操作细节逻辑（为保持一致性，key 从后往前读）

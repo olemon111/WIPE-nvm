@@ -1,0 +1,27 @@
+2022年 12月 04日 星期日 00:49:39 CST
+THREAD NUMBER:         30
+LOAD_SIZE:             400000000
+PUT_SIZE:              10000000
+GET_SIZE:              10000000
+DB  name:              letree
+Workload:              
+read 500000000 values from /home/zzy/dataset/generate_random_ycsb.dat in 2539 ms (196.928 M values/s)
+Map addrs:0x7f1980000000
+Current addrs:0x7f1980000000
+Start run ....
+root_expand, old_groups: 1 new_groups: 17
+root_expand, old_groups: 17 new_groups: 248
+root_expand, old_groups: 248 new_groups: 3808
+root_expand, old_groups: 3808 new_groups: 51309
+root_expand, old_groups: 51309 new_groups: 203430
+[Metic-Load]: Load 400000000: cost 89.9845s, iops 4.44521e+06 .
+[Metic-Put]: Put 10000000: cost 1.80389s, iops 5.54356e+06 .
+1, 134236 Get error! 16750309554543771680, val:4535922400236334273
+2, 146672 Get error! 7706513860646008328, val:8477498220308318172
+3, 204246 Get error! 14143209565643576070, val:11825903865461437085
+4, 249585 Get error! 7647503344871334781, val:12072780661400044238
+5, 269610 Get error! 968908323015778586, val:13219639295491677720
+[34mINFO[0m [32mmain: [0mwrong get: 5
+[Metic-Get]: Get 10000000: cost 0.67918s, iops 1.47236e+07 .
+/mnt/pmem1/lbl/data used: 3828229696 bytes. (3650 Mib, 905kib. free 12 Mib, 426kib.)
+./tests/../build/multi_bench --dbname letree --loadstype 3 --load-size 400000000 --put-size 10000000 --get-size 10000000 -t 30

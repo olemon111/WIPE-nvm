@@ -20,6 +20,7 @@
 using combotree::ComboTree;
 using combotree::Random;
 using combotree::Timer;
+using namespace combotree;
 using ycsbc::KvDB;
 using namespace dbInter;
 using namespace util;
@@ -341,11 +342,12 @@ int main(int argc, char *argv[])
             size_t start_pos = thread_id * per_thread_size;
             size_t size = (thread_id == thread_num-1) ? LOAD_SIZE-(thread_num-1)*per_thread_size : per_thread_size;
             for (size_t j = 0; j < size; ++j) {
-              // if(j>=11500)
-              // if(j>=167)
-              // {
-              // cout << j << " let put:" << data_base[start_pos+j] << endl;
-              // }
+              if(j>=11340)
+              {
+              // cout << " let put: " << std::dec << start_pos << " + " << j << ", key:" << data_base[start_pos+j];
+              // cout << " by " << std::hex << std::this_thread::get_id() << std::dec << endl;
+              }
+              cout << std::dec;
                 auto ret = db->Put(data_base[start_pos+j], data_base[start_pos+j]);
                 if (ret != 1) {
                     std::cout << "load error, key: " << data_base[start_pos+j] << ", size: " << j << std::endl;
@@ -400,7 +402,7 @@ int main(int argc, char *argv[])
               << "cost " << us_times / 1000000.0 << "s, "
               << "iops " << (double)(PUT_SIZE) / (double)us_times * 1000000.0 << " ." << std::endl;
   }
-  // std::cout << "getchar:" <<std::endl;
+  // std::cout << "getchar:" << std::endl;
   // getchar();
   {
     // Get
@@ -432,8 +434,7 @@ int main(int argc, char *argv[])
     }
     for (auto &t : threads)
       t.join();
-    // LOG(Debug::INFO, "wrong get: %ld", wrong_get);
-    cout << "wrong get:" << wrong_get << endl;
+    LOG(Debug::INFO, "wrong get: %ld", wrong_get);
 
     timer.Record("stop");
     us_times = timer.Microsecond("stop", "start");
